@@ -47,7 +47,7 @@ class Planet:
     self._y = y
     
   def __str__(self):
-    return 'Planet Id: ' + str(self._planet_id) + ' with ' + (self._num_ships) + 'ships'
+    return 'Planet Id: ' + str(self._planet_id) + ' with ' + str(self._num_ships) + ' ships'
 
   def PlanetID(self):
     return self._planet_id

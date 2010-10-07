@@ -1,19 +1,3 @@
-#!/usr/bin/env python
-#
-
-"""
-// The DoTurn function is where your code goes. The PlanetWars object contains
-// the state of the game, including information about all planets and fleets
-// that currently exist. Inside this function, you issue orders using the
-// pw.IssueOrder() function. For example, to send 10 ships from planet 3 to
-// planet 8, you would say pw.IssueOrder(3, 8, 10).
-//
-// There is already a basic strategy in place here. You can use it as a
-// starting point, or you can throw it out entirely and replace it with your
-// own. Check out the tutorials and articles on the contest website at
-// http://www.ai-contest.com/resources.
-"""
-    
 from PlanetWars import PlanetWars
 from DebugLog import log
 from Settings import *
@@ -94,58 +78,198 @@ def DoTurn4(pw):
   except Exception, e:
     log.exc(e)
 
+def DoTurn5(pw):
+  global wait_for_enemy
+  global turn_number
+  turn_number += 1
+  try:
+    
+    if turn_number == 1:
+      distance_to_enemy = pw.Distance(pw.MyPlanets()[0].PlanetID(), pw.EnemyPlanets()[0].PlanetID())
+      if distance_to_enemy < distance_to_wait_first_turn:
+        wait_for_enemy = True
+        
+    if wait_for_enemy:
+      if len(pw.Fleets()) > 0:
+        wait_for_enemy = False
+      else:
+        return
+    
+    #for each of my planets
+      #for each of the other planets
+      
+        #find the total number of fleets when we could get there from our planet, then determine the best planet to attack
+    
+    orders = []
+    allGains = {}
+    stayHomeGain = getAvailableShips(pw)
+    availableShips = {}
+    
+    log.debug('starting to get planet gains')
+    for my_planet in pw.MyPlanets():
+      
+      gains = []
+      for other_planet in pw.Planets():
+        gainsDict = getPlanetGains(my_planet, other_planet, pw)
+        #allGains[my_planet.PlanetID()] = getPlanetGains(my_planet, other_planet, pw)
+        
+        for ships in gainsDict:
+          if gainsDict[ships] > 0:
+            gains.append((ships, gainsDict[ships], other_planet.PlanetID()))
+            
+        log.debug('gains for planet ' + str(my_planet.PlanetID()) + ' : \n' + '\n'.join([(str(x) + ' : ' + str(gainsDict[x])) for x in gainsDict if gainsDict[x] > 0]))
+      
+        availableShips[my_planet.PlanetID()] = max(0, my_planet.NumShips() - extra_ships)
+      
+      allGains[my_planet.PlanetID()] = gains
+    log.debug('done getting planet gains')
+    log.debug('gains: ' + str(allGains))
+    
+    """
+    allGains = {}
+    for my_planet in pw.MyPlanets():
+      gains = []
+      
+      #add the gains attained by leaving ships here
+      for ships in stayHomeGain[my_planet.PlanetID()]:
+        gains.append((ships, stayHomeGain[my_planet.PlanetID()][ships], my_planet.PlanetID()))
+        
+      for other_planet in pw.Planets():
+        if other_planet.GrowthRate() == 0: # not worth taking over
+          continue
+        if my_planet.PlanetID() == other_planet.PlanetID(): #same planet
+          continue
+        
+        availableShips[my_planet.PlanetID()] = max(0, my_planet.NumShips() - extra_ships)
+        
+        shipsAtArriveTime, time = pw.GetShipsAtArriveTime(my_planet.PlanetID(), other_planet.PlanetID())
+        if shipsAtArriveTime[1] == 1:
+          # we will have control of that planet, don't bother with it
+          pass
+        else:
+          # should we try to take over?
+          gain = 0 if time >= turns_ahead else (turns_ahead - time) * other_planet.GrowthRate() * (1 if shipsAtArriveTime == 0 else 2)
+          
+          gains.append((shipsAtArriveTime[0] + extra_ships, gain, other_planet.PlanetID()))
+      
+      allGains[my_planet.PlanetID()] = sorted(gains)
+    """
+    log.debug('got all gains')
+    
+    orders = getBestOrders3(allGains, availableShips, pw)
+    
+    log.debug('got orders from getBestOrders3(): \n' + '\n'.join([str(x) for x in orders]))
+    log.debug(str(orders))
+    log.debug('Starting to issue all orders')
+    for order in orders:
+      try:
+        pw.IssueOrder(order[0], order[1], order[2])
+      except Exception, e:
+        log.exc(e)
+    log.debug('done issueing orders')
+    
+  except Exception, e:
+    log.exc(e)
 
-"""
+
+
 def getPlanetGains(sourcePlanet, destinationPlanet, pw):
   fleets = {}
   for turn in range(turns_ahead):
     fleets[turn] = []
     
   for fleet in pw.Fleets():
-    if fleet.DestinationPlanet() == destinationPlanet.PlanetID() and fleet.TurnsRemaining < turns_ahead:
+    if fleet.DestinationPlanet() == destinationPlanet.PlanetID() and fleet.TurnsRemaining() < turns_ahead:
       fleets[fleet.TurnsRemaining()].append(fleet)
   
   distance = pw.Distance(sourcePlanet.PlanetID(), destinationPlanet.PlanetID())
   
-  log.debug('planets ' + str(sourcePlanet) +  '   ,  ' + str(destinationPlanet))
-  log.debug('distance: ' + str(distance))
+  #log.debug('planets ' + str(sourcePlanet) +  '   ,  ' + str(destinationPlanet))
+  #log.debug('distance: ' + str(distance) + ' , growth: ' + str(destinationPlanet.GrowthRate()))
+  #log.debug('all fleets: \n' + '\n'.join([str(fleets[turn]) for turn in range(turns_ahead)]))
   
-  newFleet = 0
+  extraShips = 1
+  shipsToSend = -1
   shipsGains = {}
   keepLooping = True
+  arrivingShips = {}
+  for turn in range(turns_ahead):
+    arrivingShips[turn] = sum([fleet.NumShips() for fleet in fleets[turn] if fleet.Owner() == 1]) - sum([fleet.NumShips() for fleet in fleets[turn] if fleet.Owner() == 2])
   
-  while keepLooping:
+  shipsPlusMinus = sum(arrivingShips.values())
+  if destinationPlanet.Owner() == 1:
+    shipsPlusMinus += destinationPlanet.NumShips()
+  elif destinationPlanet.Owner() == 2:
+    shipsPlusMinus -= destinationPlanet.NumShips()
+  
+  while extraShips != 0 and not shipsGains.has_key(shipsToSend + extraShips):
     keepLooping = False
     ships = destinationPlanet.NumShips()
     currentOwner = destinationPlanet.Owner()
     gain = 0
     
+    shipsToSend += extraShips
+    extraShips = 0
+    
     for turn in range(turns_ahead):
-      ships += planet.GrowthRate()
+      if currentOwner != 0:
+        ships += destinationPlanet.GrowthRate()
       
-      arriving = sum([fleet.NumShips() for fleet in fleets[turn] if fleet.Owner() == 1]) - sum([fleet.NumShips() for fleet in fleets[turn] if fleet.Owner() == 2])
-        #log.debug('arriving: ' + str(arriving))
-      if arriving == 0:
-        continue
-      if arriving > 0:
-        fleetOwner = 1
-      else:
-        fleetOwner = 2
-      arriving = abs(arriving)
+      arriving = arrivingShips[turn]
+      if turn == distance:
+        arriving += shipsToSend
+        #log.debug('adding ' + str(shipsToSend) + ' ships being sent')
       
-      if currentOwner == fleetOwner:
-        ships += arriving
-      elif ships >= arriving:
-        ships -= arriving
-      else:
-        #planet will be changing sides
-        if currentOwner == 1:
-          if turn >= distance:
-            keepLooping = True
-            #i'm losing a planet, so there could be gain by sending additional ships here
-          else:
-            #gonna lose it anyways, no point in
-"""
+      #log.debug('arriving: ' + str(arriving) + ' current ships: ' + str(ships))
+      if arriving != 0:
+        
+        if arriving > 0:
+          fleetOwner = 1
+        else:
+          fleetOwner = 2
+        arriving = abs(arriving)
+        
+        if currentOwner == fleetOwner:
+          ships += arriving
+        elif ships >= arriving:
+          ships -= arriving
+        else:
+          #log.debug('planet changing sides on turn ' + str(turn))
+          currentOwner = fleetOwner
+            
+          ships = arriving - ships
+        
+      if turn >= distance and currentOwner != 1:
+        if extraShips == 0:
+          extraShips = ships + extra_ships
+        else:
+          extraShips == min(extraShips, ships + extra_ships)
+          
+        #log.debug('turn >= distance and planet is not owned, extra ships: '  + str(extraShips))
+        
+    #now find the total gain of sending that many ships
+    
+    gain = -shipsPlusMinus #total ships sent already in movement
+    gain -= shipsToSend # ships being sent out this turn
+    if currentOwner == 1:
+      gain += ships
+    elif currentOwner == 2:
+      gain -= ships
+    #else - owner is neutral, do nothing to gain
+    
+    #log.debug('ships sent: ' + str(shipsToSend) + ' starting +-: ' + str(shipsPlusMinus) + ' final ships: ' + str(ships))
+    shipsGains[shipsToSend] = gain
+  
+  #normalize the gains so that 0 ships to send = 0 gain
+  for shipCount in shipsGains:
+    shipsGains[shipCount] -= shipsGains[0]
+  
+  #log.debug('ships gains: ' + str(shipsGains))
+    
+  return shipsGains
+      
+    
+
     
 def addStreamOrders(orders, stayHomeGain, pw):
   new_orders = []
@@ -207,7 +331,7 @@ def getAvailableShips(pw):
     newStartingShips = 0
     keepLooping = True
     
-    log.debug('fleet turns remaining: \n' + '\n'.join([str(fleets[turns]) for turns in range(turns_ahead)]))
+    #log.debug('fleet turns remaining: \n' + '\n'.join([str(fleets[turns]) for turns in range(turns_ahead)]))
     keepLoopingCount = 0
     while keepLooping:
       keepLoopingCount += 1
@@ -281,8 +405,8 @@ def getBestOrders1(gains, availableShips, pw):
   orders = [] #list of (source planetId, destinationPlanetId, number of attackers)
   
   for planet in availableShips:
-    log.debug('planet: ' + str(planet) + '   available ships: ' + str(availableShips[planet]))
-    log.debug('gains: \n' + '\n'.join([str(x) for x in gains[planet]]))
+    #log.debug('planet: ' + str(planet) + '   available ships: ' + str(availableShips[planet]))
+    #log.debug('gains: \n' + '\n'.join([str(x) for x in gains[planet]]))
     
     if availableShips[planet] == 0:
       continue
@@ -341,16 +465,12 @@ def getBestOrders3(allGains, allAvailableShips, pw):
   
   
   for planet in allAvailableShips:
-    log.debug('started planet ' + str(planet))
+    #log.debug('started planet ' + str(planet))
     availableShips = allAvailableShips[planet]
     gains = sorted(allGains[planet], reverse = True)
     
-    if planet == 1:
-      log.debug('planet: ' + str(planet) + '   available ships: ' + str(availableShips))
-      log.debug('gains: \n' + '\n'.join([str(x) for x in enumerate(gains)]))
-    
     if len(gains) == 0:
-      log.debug('no planets left to conquer?')
+      #log.debug('no planets left to conquer?')
       continue
     
     if availableShips == 0:
@@ -360,6 +480,7 @@ def getBestOrders3(allGains, allAvailableShips, pw):
     indeces = []
     
     strategy = optimizeFleets(gains, availableShips, [])
+    log.debug('planet: ' + str(planet) + ' strategy: ' + str(strategy))
     
     for index in strategy[1]:
       planet_to_attack = gains[index][2]
@@ -457,7 +578,7 @@ def main():
     if len(current_line) >= 2 and current_line.startswith("go"):
       log.startTurn()
       pw = PlanetWars(map_data)
-      DoTurn4(pw)
+      DoTurn5(pw)
       pw.FinishTurn()
       map_data = ''
       log.debug('finished turn')

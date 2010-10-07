@@ -5,7 +5,7 @@ import traceback
 from datetime import datetime
 
 HOME_OPERATING_SYSTEM = 'nt'
-LOG_LEVEL = logging.ERROR
+LOG_LEVEL = logging.DEBUG
 LOG_FILENAME = 'debugLog.txt'
 
 class Log():
